@@ -1,0 +1,45 @@
+package com.example.moneytransfer;
+
+import org.springframework.http.ResponseEntity;
+import org.springframework.http.HttpStatus;
+import org.springframework.web.server.ResponseStatusException;
+import org.springframework.stereotype.Service;
+import org.springframework.web.client.RestTemplate;
+import java.time.Duration;
+import java.util.concurrent.CompletableFuture;
+import java.util.concurrent.ExecutionException;
+import java.util.concurrent.TimeoutException;
+
+@Service
+public class MoneyTransferService {
+
+    private final RestTemplate restTemplate = new RestTemplate();
+    private final Duration timeout = Duration.ofSeconds(30); // Adjust timeout as needed
+
+    public void transferMoney(String fromAccount, String toAccount, double amount) {
+        try {
+            CompletableFuture<Void> transferFuture = CompletableFuture.runAsync(() -> {
+                // Call API 1
+                ResponseEntity<String> response1 = restTemplate.postForEntity("http://api1/transfer",
+                    new TransferRequest(fromAccount, toAccount, amount), String.class);
+                if (!response1.getStatusCode().is2xxSuccessful()) {
+                    throw new ResponseStatusException(response1.getStatusCode(), "API 1 failed");
+                }
+
+                // Call API 2
+                ResponseEntity<String> response2 = restTemplate.postForEntity("http://api2/confirm",
+                    new TransferRequest(fromAccount, toAccount, amount), String.class);
+                if (!response2.getStatusCode().is2xxSuccessful()) {
+                    throw new ResponseStatusException(response2.getStatusCode(), "API 2 failed");
+                }
+            });
+
+            // Wait for the transfer to complete with timeout
+            transferFuture.get(timeout.toMillis(), java.util.concurrent.TimeUnit.MILLISECONDS);
+        } catch (TimeoutException e) {
+            throw new ResponseStatusException(HttpStatus.REQUEST_TIMEOUT, "Transfer operation timed out");
+        } catch (InterruptedException | ExecutionException e) {
+            throw new ResponseStatusException(HttpStatus.INTERNAL_SERVER_ERROR, "Transfer operation failed", e);
+        }
+    }
+}
